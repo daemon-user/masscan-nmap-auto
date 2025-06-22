@@ -138,3 +138,6 @@ This tool is intended for authorized security testing and network auditing only.
 Unauthorized scanning may be illegal. Always obtain permission before scanning networks you do not own.
 
 ---
+
+**Happy scanning!**  
+For issues or feature requests, please open an issue or pull request on this repository.
