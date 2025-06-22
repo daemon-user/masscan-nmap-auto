@@ -2,16 +2,17 @@
 
 **masscan-nmap-auto** is an automated Python script that combines the speed of [masscan](https://github.com/robertdavidgraham/masscan) for rapid port discovery with the detailed service enumeration capabilities of [Nmap](https://nmap.org/).  
 It efficiently scans large networks or lists of hosts, detects open ports, and performs targeted service/version detection only on those ports, saving time and bandwidth.
+This script scans networks or host lists for open ports with masscan, then runs Nmap service detection **only on the specific open ports for each host**, saving time and bandwidth.
 
 ---
 
 ## Features
 
-- **Fast port scanning** using masscan
-- **Targeted service enumeration** using Nmap on only discovered open ports
-- **Flexible target input:** single IP/range or file with multiple targets
-- **Output options:** print results to terminal or save all script output to a file
-- **Easy integration** into penetration testing and network audit workflows
+- 🚀 **Fast port discovery** with masscan
+- 🎯 **Targeted Nmap scans**: Only open ports per host are scanned
+- 📄 **Flexible input**: Single IP/CIDR or file with multiple targets
+- 📝 **Clean output**: See exactly which ports are open on which hosts, and detailed Nmap results
+- 📤 **Output to file**: All results and scan details can be saved to a text file
 
 ---
 
@@ -85,6 +86,32 @@ sudo ./masscan_nmap_auto.py [options]
   - `mscan.json` — masscan JSON output  
   - `hosts.txt` — List of hosts with open ports  
   - `nmap_scan.*` — Nmap output files (XML, grepable, normal)
+ 
+
+---
+
+## Sample Output
+
+```
+[+] Running: sudo masscan 192.168.1.10,192.168.1.20 -p22,80,443 --rate 1000 -oJ mscan.json
+
+[+] Masscan Open Ports:
+  192.168.1.10:22
+  192.168.1.10:80
+  192.168.1.20:443
+
+[+] Starting Nmap service detection on each host with its open ports...
+
+[+] Scanning 192.168.1.10 on ports: 22,80
+[+] Running: sudo nmap -n -vvv -Pn -sV -sC -p22,80 192.168.1.10
+... (Nmap output here) ...
+
+[+] Scanning 192.168.1.20 on ports: 443
+[+] Running: sudo nmap -n -vvv -Pn -sV -sC -p443 192.168.1.20
+... (Nmap output here) ...
+
+[+] Script completed.
+```
 
 ---
 
@@ -111,6 +138,3 @@ This tool is intended for authorized security testing and network auditing only.
 Unauthorized scanning may be illegal. Always obtain permission before scanning networks you do not own.
 
 ---
-
-**Happy scanning!**  
-For issues or feature requests, please open an issue on this repository.
