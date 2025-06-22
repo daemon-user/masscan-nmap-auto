@@ -3,6 +3,7 @@ import argparse
 import os
 import sys
 import json
+import subprocess
 
 def parse_targets(ip_arg, file_arg, output):
     targets = set()
@@ -19,12 +20,22 @@ def parse_targets(ip_arg, file_arg, output):
                     targets.add(line)
     return targets
 
-def run_command(cmd, output):
+def run_command(cmd, output, suppress_output=False):
     output(f"[+] Running: {cmd}")
-    result = os.system(cmd)
-    if result != 0:
+    try:
+        if suppress_output:
+            result = subprocess.run(cmd, shell=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+            if result.stderr:
+                output(f"[-] Command error output: {result.stderr}")
+            return 0
+        else:
+            result = subprocess.run(cmd, shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            output(result.stdout)
+            return 0
+    except subprocess.CalledProcessError as e:
         output(f"[-] Command failed: {cmd}")
-    return result
+        output(e.stdout if e.stdout else str(e))
+        return e.returncode
 
 def main():
     parser = argparse.ArgumentParser(
@@ -57,9 +68,9 @@ def main():
 
     target_str = ",".join(targets)
 
-    # Step 1: Run masscan
+    # Step 1: Run masscan (suppress progress output)
     masscan_cmd = f"sudo masscan {target_str} -p{args.p} --rate {args.r} -oJ mscan.json"
-    run_command(masscan_cmd, output)
+    run_command(masscan_cmd, output, suppress_output=True)
 
     # Step 2: Parse masscan output
     if not os.path.isfile("mscan.json") or os.path.getsize("mscan.json") == 0:
@@ -69,16 +80,20 @@ def main():
         sys.exit(1)
 
     hosts = {}
-    port_set = set()
 
     with open("mscan.json") as f:
-        results = json.load(f)
+        try:
+            results = json.load(f)
+        except Exception as e:
+            output(f"[-] Failed to parse masscan JSON output: {e}")
+            if args.output:
+                out_fp.close()
+            sys.exit(1)
         for entry in results:
             ip = entry.get("ip")
             for portinfo in entry.get("ports", []):
                 if portinfo.get("status") == "open":
                     port = portinfo.get("port")
-                    port_set.add(port)
                     hosts.setdefault(ip, set()).add(port)
 
     if not hosts:
@@ -87,19 +102,21 @@ def main():
             out_fp.close()
         sys.exit(1)
 
-    # Step 3: Write hosts to file
-    with open("hosts.txt", "w") as f:
-        for ip in hosts.keys():
-            f.write(f"{ip}\n")
+    # Print clean open port/IP details
+    output("\n[+] Masscan Open Ports:")
+    for host, ports in hosts.items():
+        for port in ports:
+            output(f"  {host}:{port}")
 
-    # Step 4: Build port list for Nmap
-    port_list_str = ",".join(str(p) for p in sorted(port_set))
+    # Step 3: Run Nmap on each host with its specific open ports
+    output("\n[+] Starting Nmap service detection on each host with its open ports...")
+    for host, ports in hosts.items():
+        port_list_str = ",".join(str(p) for p in sorted(ports))
+        output(f"\n[+] Scanning {host} on ports: {port_list_str}")
+        nmap_cmd = f"sudo nmap -n -vvv -Pn -sV -sC -p{port_list_str} {host}"
+        run_command(nmap_cmd, output)
 
-    # Step 5: Run Nmap
-    nmap_cmd = f"sudo nmap -n -vvv -Pn -sV -sC -iL hosts.txt -p{port_list_str} -oA nmap_scan"
-    run_command(nmap_cmd, output)
-
-    output("[+] Script completed.")
+    output("\n[+] Script completed.")
     if args.output:
         out_fp.close()
 
