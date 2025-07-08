@@ -4,6 +4,9 @@ import os
 import sys
 import json
 import subprocess
+import signal
+
+STATE_FILE = "scan_state.json"
 
 def parse_targets(ip_arg, file_arg, output):
     targets = set()
@@ -37,9 +40,19 @@ def run_command(cmd, output, suppress_output=False):
         output(e.stdout if e.stdout else str(e))
         return e.returncode
 
+def save_state(state):
+    with open(STATE_FILE, "w") as f:
+        json.dump(state, f)
+
+def load_state():
+    if os.path.isfile(STATE_FILE):
+        with open(STATE_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Automate masscan + Nmap for fast service detection"
+        description="Automate masscan + Nmap for fast service detection with pause/resume"
     )
     parser.add_argument('-i', help='Target IP Addresses or CIDR (e.g., 192.168.1.0/24)')
     parser.add_argument('-f', help='File with target IPs/hostnames, one per line')
@@ -50,7 +63,7 @@ def main():
 
     # Output handler
     if args.output:
-        out_fp = open(args.output, "w")
+        out_fp = open(args.output, "a")
         def output(msg):
             print(msg)
             out_fp.write(msg + "\n")
@@ -70,7 +83,10 @@ def main():
 
     # Step 1: Run masscan (suppress progress output)
     masscan_cmd = f"sudo masscan {target_str} -p{args.p} --rate {args.r} -oJ mscan.json"
-    run_command(masscan_cmd, output, suppress_output=True)
+    if not os.path.isfile("mscan.json") or os.path.getsize("mscan.json") == 0:
+        run_command(masscan_cmd, output, suppress_output=True)
+    else:
+        output("[+] Using existing mscan.json file.")
 
     # Step 2: Parse masscan output
     if not os.path.isfile("mscan.json") or os.path.getsize("mscan.json") == 0:
@@ -80,7 +96,6 @@ def main():
         sys.exit(1)
 
     hosts = {}
-
     with open("mscan.json") as f:
         try:
             results = json.load(f)
@@ -108,15 +123,44 @@ def main():
         for port in ports:
             output(f"  {host}:{port}")
 
+    # Load previous scan state if exists
+    scan_state = load_state()
+    if "scanned_hosts" not in scan_state:
+        scan_state["scanned_hosts"] = []
+
+    # Handle SIGINT for pause functionality
+    def handle_sigint(signum, frame):
+        output("\n[!] Pausing scan. Saving state to resume later...")
+        save_state(scan_state)
+        if args.output:
+            out_fp.close()
+        sys.exit(0)
+    signal.signal(signal.SIGINT, handle_sigint)
+
     # Step 3: Run Nmap on each host with its specific open ports
     output("\n[+] Starting Nmap service detection on each host with its open ports...")
-    for host, ports in hosts.items():
-        port_list_str = ",".join(str(p) for p in sorted(ports))
-        output(f"\n[+] Scanning {host} on ports: {port_list_str}")
-        nmap_cmd = f"sudo nmap -n -vvv -Pn -sV -sC -p{port_list_str} {host}"
-        run_command(nmap_cmd, output)
+    try:
+        for host, ports in hosts.items():
+            if host in scan_state["scanned_hosts"]:
+                output(f"[+] Skipping {host} (already scanned)")
+                continue
+            port_list_str = ",".join(str(p) for p in sorted(ports))
+            output(f"\n[+] Scanning {host} on ports: {port_list_str}")
+            nmap_cmd = f"sudo nmap -n -vvv -Pn -sV -sC -p{port_list_str} {host}"
+            run_command(nmap_cmd, output)
+            scan_state["scanned_hosts"].append(host)
+            save_state(scan_state)
+    except Exception as e:
+        output(f"[-] Exception occurred: {e}")
+        save_state(scan_state)
+        if args.output:
+            out_fp.close()
+        sys.exit(1)
 
-    output("\n[+] Script completed.")
+    output("\n[+] Script completed. All hosts scanned.")
+    # Clean up state file after completion
+    if os.path.isfile(STATE_FILE):
+        os.remove(STATE_FILE)
     if args.output:
         out_fp.close()
 
