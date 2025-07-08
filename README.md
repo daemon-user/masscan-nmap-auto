@@ -10,6 +10,7 @@ This script scans networks or host lists for open ports with masscan, then runs 
 
 - 🚀 **Fast port discovery** with masscan
 - 🎯 **Targeted Nmap scans**: Only open ports per host are scanned
+- ⏸️ Pause and resume: Interrupt and continue long scans without losing progress
 - 📄 **Flexible input**: Single IP/CIDR or file with multiple targets
 - 📝 **Clean output**: See exactly which ports are open on which hosts, and detailed Nmap results
 - 📤 **Output to file**: All results and scan details can be saved to a text file
@@ -77,6 +78,14 @@ sudo ./masscan_nmap_auto.py [options]
   sudo ./masscan_nmap_auto.py -i 10.0.0.1 -f targets.txt -p 1-1024
   ```
 
+- Pause and resume:
+  ```bash
+  sudo ./masscan_nmap_auto.py -i 10.0.0.1 -f targets.txt -p 1-1024 sudo ./masscan_nmap_targeted.py -i 192.168.1.0/24 -p 22,80,443 -o results.txt
+  # Press Ctrl+C to pause
+  sudo ./masscan_nmap_targeted.py -i 192.168.1.0/24 -p 22,80,443 -o results.txt
+  # ...it resumes!
+  ```
+  
 ---
 
 ## Output
